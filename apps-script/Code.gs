@@ -26,22 +26,34 @@ var SHEET_SETTINGS = 'Settings';
 var CLOSED_WINDOW_MS = 36 * 60 * 60 * 1000; // closed tables shown to bartenders (last 36h)
 var DEFAULT_PIN = '1234';
 
-// Seeded once, only if the Menu sheet is empty. Prices set later by the manager.
+// Seeded when the Menu sheet is empty. [id, name, category, price].
+// Food prices are from Candy's menu; drink prices are placeholders for the manager to adjust.
 var SEED_MENU = [
-  ['homemade-burger','Homemade Burger','Food'], ['cheese-burger','Cheese Burger','Food'],
-  ['fillet-steak','Fillet Steak','Food'], ['rump-steak','Rump Steak','Food'],
-  ['ribs','Pork Ribs','Food'], ['fish-and-chips','Fish & Chips','Food'],
-  ['calamari','Calamari','Food'], ['oysters','Oysters','Food'],
-  ['chicken-schnitzel','Chicken Schnitzel','Food'], ['chicken-pie','Chicken Pie','Food'],
-  ['toasted-sarmie','Toasted Sandwich','Food'], ['boerie-roll','Boerewors Roll','Food'],
-  ['chips','Chips / Fries','Food'], ['greek-salad','Greek Salad','Food'], ['breakfast','Full Breakfast','Food'],
-  ['draught-beer','Draught Beer','Drink'], ['bottled-beer','Bottled Beer','Drink'],
-  ['cider','Cider','Drink'], ['red-wine','Red Wine (glass)','Drink'],
-  ['white-wine','White Wine (glass)','Drink'], ['cocktail','House Cocktail','Drink'],
-  ['brandy-coke','Brandy & Coke','Drink'], ['sherry','Sherry','Drink'],
-  ['coke','Coke','Drink'], ['lemonade','Lemonade','Drink'],
-  ['still-water','Still Water','Drink'], ['sparkling-water','Sparkling Water','Drink'],
-  ['coffee','Coffee','Drink'], ['cappuccino','Cappuccino','Drink']
+  ['cheeseburger-chips','Cheeseburger & Chips','Food',90],
+  ['hake-chips-salad','Hake Fillet, Chips & Salad','Food',120],
+  ['beef-fillet-chips','Beef Fillet & Chips','Food',140],
+  ['lasagne-salad','Lasagne & Salad','Food',95],
+  ['chicken-schnitzel','Chicken Schnitzel, Salad & Chips','Food',110],
+  ['chicken-strips-chips','Chicken Strips & Chips','Food',90],
+  ['bangers-mash','Bangers & Mash','Food',90],
+  ['mac-cheese-salad','Macaroni Cheese & Salad','Food',90],
+  ['toasted-fillet-sandwich','Toasted Fillet Steak Sandwich','Food',115],
+  ['toasted-sandwich-chips','Toasted Sandwiches & Chips','Food',70],
+  ['breakfast','Breakfast','Food',80],
+  ['draught-beer','Draught Beer','Drink',35],
+  ['bottled-beer','Bottled Beer','Drink',30],
+  ['cider','Cider','Drink',38],
+  ['red-wine','Red Wine (glass)','Drink',45],
+  ['white-wine','White Wine (glass)','Drink',45],
+  ['cocktail','House Cocktail','Drink',65],
+  ['brandy-coke','Brandy & Coke','Drink',40],
+  ['sherry','Sherry','Drink',30],
+  ['coke','Coke','Drink',25],
+  ['lemonade','Lemonade','Drink',25],
+  ['still-water','Still Water','Drink',18],
+  ['sparkling-water','Sparkling Water','Drink',22],
+  ['coffee','Coffee','Drink',25],
+  ['cappuccino','Cappuccino','Drink',32]
 ];
 
 // ---------- HTTP entry points ----------
@@ -66,6 +78,7 @@ function handle(req) {
       case 'openTab':     openTab(req.name);                               return json(state());
       case 'addItem':     addItem(req.tabId, req.itemId, Number(req.qty)); return json(state());
       case 'setQty':      setQty(req.tabId, req.itemId, Number(req.qty));  return json(state());
+      case 'saveTab':     saveTab(req.tabId, req.items);                   return json(state());
       case 'closeTab':    closeTab(req.tabId);                             return json(state());
       case 'menuUpsert':  menuUpsert(req);                                 return json(state());
       case 'menuDelete':  menuDelete(req.id);                              return json(state());
@@ -168,6 +181,19 @@ function setQty(tabId, itemId, qty) {
   }
   if (qty > 0) addItem(tabId, itemId, qty);
 }
+// Replace ALL lines on a tab with the given items (the "submit the whole order" call).
+// items: [{ itemId, qty }]. Names/categories/prices are looked up from the menu at save time.
+function saveTab(tabId, items) {
+  items = items || [];
+  var sh = sheet(SHEET_LINES), data = sh.getDataRange().getValues();
+  for (var i = data.length - 1; i >= 1; i--) if (String(data[i][0]) === String(tabId)) sh.deleteRow(i + 1);
+  items.forEach(function(it){
+    var qty = Number(it.qty) || 0; if (qty <= 0) return;
+    var m = menuItem(it.itemId); if (!m) return;
+    sh.appendRow([ tabId, m.id, m.name, m.category, (m.price==null?'':m.price), qty ]);
+  });
+}
+
 function closeTab(tabId) {
   var sh = sheet(SHEET_TABS), data = sh.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
@@ -234,7 +260,7 @@ function ensureSheets() {
   ensure(ss, SHEET_LINES,    ['tabId','itemId','name','category','price','qty']);
   ensure(ss, SHEET_SETTINGS, ['key','value']);
   var menuSh = ss.getSheetByName(SHEET_MENU);
-  if (menuSh.getLastRow() < 2) SEED_MENU.forEach(function(m){ menuSh.appendRow([ m[0], m[1], m[2], '', true ]); });
+  if (menuSh.getLastRow() < 2) SEED_MENU.forEach(function(m){ menuSh.appendRow([ m[0], m[1], m[2], (m[3]==null?'':m[3]), true ]); });
   if (getSetting('managerPin', null) == null) setSetting('managerPin', DEFAULT_PIN);
 }
 function ensure(ss, name, header) {

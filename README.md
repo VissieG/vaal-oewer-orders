@@ -9,7 +9,8 @@ A mobile web app for taking food & drink orders at **Candy's Pub & Restaurant** 
 ## Bartender mode
 - **Open tables** and **Closed tables** shown as **blocks**; a **＋ New table** block to start one (pick a number, optional name).
 - Tap an **open** table → the bill. Add items with **dropdowns** (Type → Item → Qty); the **unit price fills in automatically**. Adjust with −/＋, remove with ✕.
-- **Close & print bill** settles the table (kept for records) and prints a receipt.
+- Nothing is stored while you type — build the order, then tap **💾 Save order** to store it (an unsaved order shows "unsaved" and warns if you leave).
+- **Close & print bill** saves, settles the table (kept for records), and prints a receipt.
 - Tap a **closed** table → the whole bill **read-only**, with **Print** and **Email** (email coming soon).
 - No data export — everything lives in the Sheet for the manager.
 

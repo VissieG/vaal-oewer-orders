@@ -173,8 +173,9 @@
         <button data-mode="bar" aria-pressed="true">🍺 Bartender</button>
         <button data-mode="mgr" aria-pressed="false">🛠️ Manager</button>
       </div>
+      <h2 class="sec">🟠 Open tables</h2>
       <div class="blocks" id="openBlocks"></div>
-      <h2 class="sec">Closed tables · last 36h</h2>
+      <h2 class="sec">🟢 Closed tables · last 36h</h2>
       <div class="blocks" id="closedBlocks"></div>
       <div class="empty hide" id="closedEmpty">No closed tables yet.</div>
     </section>
@@ -279,6 +280,8 @@
   var mgrTab = "menu";        // menu | reports
   var mgrUnlocked = false;
   var current = null;         // {id, closed:bool}
+  var draft = [];             // working copy of the open table's items (not saved until Save)
+  var draftDirty = false;     // true when the draft differs from what's stored
   var pinBuf = "";
 
   function money(n){ return "R" + (Number(n)||0).toFixed(2); }
@@ -315,6 +318,16 @@
   function findOpen(id){ return state.open.filter(function(t){return t.id===id;})[0]; }
   function findClosed(id){ return state.closed.filter(function(t){return t.id===id;})[0]; }
   function menuById(id){ return state.menu.filter(function(m){return m.id===id;})[0]; }
+  function draftTotal(){ var s=0; draft.forEach(function(l){ if(l.price!=null) s+=l.price*l.qty; }); return s; }
+  function draftCount(){ var n=0; draft.forEach(function(l){ n+=l.qty; }); return n; }
+  function copyItems(items){ return (items||[]).map(function(l){ return {id:l.id,name:l.name,category:l.category,price:l.price,qty:l.qty}; }); }
+  // Open a table into the order screen. For open tables we load a local DRAFT that
+  // is only written to the Sheet when the user taps Save (or Close & print).
+  function openTableView(id, closed){
+    current = { id:id, closed:closed };
+    if(!closed){ var t=findOpen(id); draft = t?copyItems(t.items):[]; draftDirty=false; }
+    go("table");
+  }
 
   // ---- navigation ----
   var SCREENS=["boot","bar","new","table","gate","mgr"];
@@ -336,8 +349,10 @@
   }
 
   $("backBtn").addEventListener("click", function(){
-    if(!$("s-mgr").classList.contains("hide") || !$("s-gate").classList.contains("hide")){ go("bar"); }
-    else { go("bar"); }
+    if(!$("s-table").classList.contains("hide") && current && !current.closed && draftDirty){
+      if(!confirm("Discard unsaved changes to this table?")) return;
+    }
+    go("bar");
   });
 
   // ---- mode switch ----
@@ -360,7 +375,7 @@
     state.open.slice().sort(function(a,b){return b.opened-a.opened;}).forEach(function(t){
       var b=document.createElement("button"); b.className="block open";
       b.innerHTML="<div class='bn'>"+esc(t.name)+"</div><div class='bm'>"+tabCount(t)+" item"+(tabCount(t)===1?"":"s")+"</div><div class='ba'>"+money(tabTotal(t))+"</div>";
-      b.addEventListener("click", function(){ current={id:t.id,closed:false}; go("table"); });
+      b.addEventListener("click", function(){ openTableView(t.id,false); });
       ob.appendChild(b);
     });
     var cb=$("closedBlocks"); cb.innerHTML="";
@@ -368,7 +383,7 @@
       var b=document.createElement("button"); b.className="block closed";
       var when=new Date(t.closedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
       b.innerHTML="<div class='bn'>"+esc(t.name)+"</div><div class='bm'>closed "+when+"</div><div class='ba'>"+money(tabTotal(t))+"</div>";
-      b.addEventListener("click", function(){ current={id:t.id,closed:true}; go("table"); });
+      b.addEventListener("click", function(){ openTableView(t.id,true); });
       cb.appendChild(b);
     });
     $("closedEmpty").classList.toggle("hide", state.closed.length>0);
@@ -392,15 +407,14 @@
     if(pickedNum==null){ toast("Pick a table number"); return; }
     var nm=$("newName").value.trim();
     var name=String(pickedNum)+(nm?" · "+nm:"");
-    // optimistic
-    var tempId="temp-"+Date.now();
-    state.open.push({id:tempId,name:name,opened:Date.now(),items:[]});
-    current={id:tempId,closed:false};
-    send({action:"openTab",name:name}).then(function(){
-      var m=state.open.filter(function(t){return t.name===name;}).sort(function(a,b){return b.opened-a.opened;})[0];
-      current=m?{id:m.id,closed:false}:null; if(!current){ go("bar"); } else { go("table"); }
-    });
-    go("table");
+    // Create on the server FIRST, then open the real table (no flaky placeholder).
+    setBusy(true);
+    api({action:"openTab", name:name}).then(function(d){ applyState(d);
+      var m=state.open.filter(function(t){return String(t.name)===String(name);}).sort(function(a,b){return b.opened-a.opened;})[0];
+      if(!m){ banner("Couldn't open the table — try again."); go("bar"); return; }
+      openTableView(m.id, false);
+    }).catch(function(){ banner("Couldn't create the table — check internet."); go("bar"); })
+      .then(function(){ setBusy(false); });
   });
 
   // ================= TABLE (open/closed) =================
@@ -408,12 +422,14 @@
   function renderTable(){
     var t=currentTab(); if(!t){ go("bar"); return; }
     var ro=current.closed;
-    setBar(esc(t.name), ro?"closed bill":"open table", true, true);
-    $("barTot").textContent=money(tabTotal(t));
+    var items = ro ? t.items : draft;
+    var total = ro ? tabTotal(t) : draftTotal();
+    setBar(esc(t.name), ro?"closed bill":(draftDirty?"open · unsaved":"open table"), true, true);
+    $("barTot").textContent=money(total);
     $("addWrap").classList.toggle("hide", ro);
 
     var wrap=$("tblLines"); wrap.innerHTML="";
-    t.items.forEach(function(l){
+    items.forEach(function(l){
       var lt=l.price==null?"—":money(l.price*l.qty);
       var sub=(l.category==="Drink"?"🥤":"🍴")+" "+(l.price==null?"no price":money(l.price)+" ea");
       var d=document.createElement("div"); d.className="line";
@@ -426,18 +442,20 @@
       }
       wrap.appendChild(d);
     });
-    $("tblEmpty").classList.toggle("hide", t.items.length>0 || ro);
-    if(ro && !t.items.length) { $("tblEmpty").classList.remove("hide"); $("tblEmpty").textContent="This table had no items."; }
-    $("tblTotal").textContent=money(tabTotal(t));
+    $("tblEmpty").classList.toggle("hide", items.length>0);
+    if(ro && !items.length){ $("tblEmpty").textContent="This table had no items."; }
+    else { $("tblEmpty").textContent="Nothing on this table yet — add items below."; }
+    $("tblTotal").textContent=money(total);
 
     if(!ro) fillAddDropdowns();
 
     var f=$("tblFooter"); f.innerHTML="";
     if(ro){
-      f.appendChild(mkBtn("🖨️ Print bill","btn",function(){ printBill(t); }));
+      f.appendChild(mkBtn("🖨️ Print bill","btn",function(){ printBill(t.name, t.items); }));
       f.appendChild(mkBtn("✉️ Email bill","btn ghost",function(){ emailBill(t); }));
     } else {
-      f.appendChild(mkBtn("✅ Close &amp; print bill","btn ok",function(){ closeAndPrint(t); }));
+      f.appendChild(mkBtn(draftDirty?"💾 Save order":"💾 Order saved","btn"+(draftDirty?" gold":" ghost"), function(){ if(draftDirty) saveDraft(); }));
+      f.appendChild(mkBtn("✅ Close &amp; print bill","btn ok", closeAndPrint));
       f.appendChild(mkBtn("✉️ Email bill","btn ghost",function(){ emailBill(t); }));
     }
   }
@@ -457,47 +475,62 @@
   $("addCat").addEventListener("change", fillAddDropdowns);
   $("addItem").addEventListener("change", updAddPrice);
   $("addBtn").addEventListener("click", function(){
-    var t=currentTab(); if(!t||current.closed) return;
+    if(!current || current.closed) return;
     var id=$("addItem").value; if(!id){ toast("No item selected"); return; }
     var qty=parseInt($("addQty").value,10)||1; var m=menuById(id); if(!m) return;
-    var line=t.items.filter(function(l){return l.id===id;})[0];
-    if(line) line.qty+=qty; else t.items.push({id:m.id,name:m.name,category:m.category,price:m.price,qty:qty});
-    renderTable();
-    send({action:"addItem",tabId:t.id,itemId:id,qty:qty});
+    var line=draft.filter(function(l){return l.id===id;})[0];
+    if(line) line.qty+=qty; else draft.push({id:m.id,name:m.name,category:m.category,price:m.price,qty:qty});
+    draftDirty=true; renderTable();
     toast(m.name+" ×"+qty+" added");
   });
 
   $("tblLines").addEventListener("click", function(e){
-    var t=currentTab(); if(!t||current.closed) return;
+    if(!current || current.closed) return;
     var inc=e.target.closest("[data-inc]"), dec=e.target.closest("[data-dec]"), rm=e.target.closest("[data-rm]");
     var id,l,nq;
-    if(inc){ id=inc.getAttribute("data-inc"); l=t.items.filter(function(x){return x.id===id;})[0]; if(!l)return; nq=l.qty+1; }
-    else if(dec){ id=dec.getAttribute("data-dec"); l=t.items.filter(function(x){return x.id===id;})[0]; if(!l)return; nq=l.qty-1; }
+    if(inc){ id=inc.getAttribute("data-inc"); l=draft.filter(function(x){return x.id===id;})[0]; if(!l)return; nq=l.qty+1; }
+    else if(dec){ id=dec.getAttribute("data-dec"); l=draft.filter(function(x){return x.id===id;})[0]; if(!l)return; nq=l.qty-1; }
     else if(rm){ id=rm.getAttribute("data-rm"); nq=0; }
     else return;
-    if(nq<=0) t.items=t.items.filter(function(x){return x.id!==id;}); else l.qty=nq;
-    renderTable();
-    send({action:"setQty",tabId:t.id,itemId:id,qty:nq});
+    if(nq<=0) draft=draft.filter(function(x){return x.id!==id;}); else l.qty=nq;
+    draftDirty=true; renderTable();
   });
 
-  function closeAndPrint(t){
-    if(!t.items.length){ if(!confirm("Close “"+t.name+"” with no items?")) return; }
-    else if(!confirm("Close “"+t.name+"”?  Total "+money(tabTotal(t)))) return;
-    printBill(t);
-    var id=t.id; state.open=state.open.filter(function(x){return x.id!==id;});
-    go("bar");
-    send({action:"closeTab",tabId:id}).then(function(){ toast("Table closed ✓"); });
+  // Persist the whole draft in one call (the "submit" step)
+  function saveDraft(cb){
+    if(!current || current.closed) return;
+    var items=draft.map(function(l){ return {itemId:l.id, qty:l.qty}; });
+    setBusy(true);
+    api({action:"saveTab", tabId:current.id, items:items}).then(function(d){ applyState(d);
+      var nt=findOpen(current.id); if(nt) draft=copyItems(nt.items);
+      draftDirty=false; renderTable(); toast("Order saved ✓"); if(cb) cb();
+    }).catch(function(){ banner("Save failed — check internet."); }).then(function(){ setBusy(false); });
+  }
+
+  function closeAndPrint(){
+    var t=currentTab(); if(!t) return;
+    if(draft.length===0){ if(!confirm("Close “"+t.name+"” with no items?")) return; }
+    else if(!confirm("Close “"+t.name+"”?  Total "+money(draftTotal()))) return;
+    var billName=t.name, billItems=copyItems(draft);
+    var items=draft.map(function(l){ return {itemId:l.id, qty:l.qty}; });
+    setBusy(true);
+    api({action:"saveTab", tabId:current.id, items:items})
+      .then(function(){ return api({action:"closeTab", tabId:current.id}); })
+      .then(function(d){ applyState(d); if(billItems.length) printBill(billName, billItems);
+        draftDirty=false; go("bar"); toast("Table closed ✓"); })
+      .catch(function(){ banner("Couldn't close — check internet."); })
+      .then(function(){ setBusy(false); });
   }
 
   // ---- print + email ----
-  function printBill(t){
+  function printBill(name, items){
     var rows="", tot=0;
-    t.items.forEach(function(l){ var lt=(l.price!=null)?l.price*l.qty:0; tot+=lt;
+    items.forEach(function(l){ var lt=(l.price!=null)?l.price*l.qty:0; tot+=lt;
       rows+="<tr><td>"+esc(l.name)+"</td><td class='r'>×"+l.qty+"</td><td class='r'>"+(l.price!=null?money(lt):"—")+"</td></tr>"; });
     var now=new Date();
     $("printArea").innerHTML=
       "<h3>Candy's Pub &amp; Restaurant</h3>"+
-      "<div class='pc'>Vaal Oewer<br>"+now.toLocaleDateString()+" "+now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+"<br>Table: "+esc(t.name)+"</div>"+
+      "<div class='pc'>Vaal Oewer<br>"+now.toLocaleDateString()+" "+now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+"<br>Table: "+esc(name)+"</div>"+
       "<table>"+rows+"<tr class='tot'><td>TOTAL</td><td></td><td class='r'>"+money(tot)+"</td></tr></table>"+
       "<div class='pc' style='margin-top:10px'>Baie dankie! · Thank you</div>";
     window.print();

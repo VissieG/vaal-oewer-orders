@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Order Book</title>
+<style>
+  :root{
+    --bg:#f4f1ea;
+    --panel:#ffffff;
+    --ink:#2b2620;
+    --muted:#8a8177;
+    --line:#e7e1d6;
+    --accent:#0f766e;      /* teal */
+    --accent-ink:#ffffff;
+    --food:#b45309;        /* amber */
+    --drink:#1d4ed8;       /* blue */
+    --danger:#b91c1c;
+    --shadow:0 1px 2px rgba(0,0,0,.05),0 8px 24px rgba(0,0,0,.06);
+    --radius:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17140f;--panel:#221e17;--ink:#f2ece1;--muted:#a79c8c;--line:#332d24;
+      --accent:#2dd4bf;--accent-ink:#08201d;--food:#f59e0b;--drink:#60a5fa;--danger:#f87171;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.4);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:900px;margin:0 auto;padding:20px 16px 64px;}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:18px;}
+  header h1{font-size:1.5rem;margin:0;letter-spacing:.2px;}
+  header .sub{color:var(--muted);font-size:.95rem;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px;margin-bottom:18px;}
+  .card h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px;}
+  form .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:6px;font-weight:600;}
+  input[type=text],input[type=number]{width:100%;padding:12px 12px;border:1px solid var(--line);
+    border-radius:10px;background:var(--bg);color:var(--ink);font-size:1rem;}
+  input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent;}
+  .seg{display:flex;gap:8px;}
+  .seg button{flex:1;padding:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);
+    border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;}
+  .seg button[aria-pressed=true]{color:#fff;border-color:transparent;}
+  .seg button.food[aria-pressed=true]{background:var(--food);}
+  .seg button.drink[aria-pressed=true]{background:var(--drink);}
+  .addbtn{margin-top:14px;width:100%;padding:14px;border:none;border-radius:10px;background:var(--accent);
+    color:var(--accent-ink);font-size:1.05rem;font-weight:700;cursor:pointer;}
+  .addbtn:active{transform:translateY(1px);}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
+  .toolbar .grow{flex:1;min-width:160px;}
+  select{padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font-size:.95rem;}
+  .ghost{padding:10px 14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    border-radius:10px;cursor:pointer;font-weight:600;font-size:.9rem;}
+  .ghost.danger{color:var(--danger);border-color:var(--danger);}
+  table{width:100%;border-collapse:collapse;}
+  .scroll{overflow-x:auto;}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  td.item{white-space:normal;font-weight:600;}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.72rem;font-weight:700;color:#fff;}
+  .pill.food{background:var(--food);} .pill.drink{background:var(--drink);}
+  .num{text-align:right;font-variant-numeric:tabular-nums;}
+  .del{border:none;background:transparent;color:var(--danger);font-size:1.1rem;cursor:pointer;padding:4px 8px;border-radius:8px;}
+  .del:hover{background:rgba(185,28,28,.1);}
+  tfoot td{font-weight:700;border-bottom:none;padding-top:14px;}
+  .empty{text-align:center;color:var(--muted);padding:32px 8px;}
+  .totals{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;font-weight:700;}
+  .totals .amt{color:var(--accent);}
+  @media (max-width:560px){
+    form .grid{grid-template-columns:1fr;}
+    header h1{font-size:1.3rem;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="appTitle">🍽️ Order Book</h1>
+    <span class="sub">Vaal Oewer · saved on this device</span>
+  </header>
+
+  <!-- Add order -->
+  <section class="card">
+    <h2>Add order</h2>
+    <form id="orderForm" autocomplete="off">
+      <div class="grid">
+        <div>
+          <label for="tableName">Table / Client</label>
+          <input type="text" id="tableName" placeholder="e.g. Table 4 or Riaan" />
+        </div>
+        <div>
+          <label>Type</label>
+          <div class="seg" role="group" aria-label="Order type">
+            <button type="button" class="food" data-type="Food" aria-pressed="true">🍴 Food</button>
+            <button type="button" class="drink" data-type="Drink" aria-pressed="false">🥤 Drink</button>
+          </div>
+        </div>
+        <div style="grid-column:1/-1">
+          <label for="item">Item</label>
+          <input type="text" id="item" placeholder="e.g. Beef burger" required />
+        </div>
+        <div>
+          <label for="qty">Quantity</label>
+          <input type="number" id="qty" value="1" min="1" step="1" />
+        </div>
+        <div>
+          <label for="price">Price each (R) — optional</label>
+          <input type="number" id="price" placeholder="0.00" min="0" step="0.01" />
+        </div>
+      </div>
+      <button class="addbtn" type="submit">Add to order book</button>
+    </form>
+  </section>
+
+  <!-- Orders -->
+  <section class="card">
+    <h2>Recorded orders</h2>
+    <div class="toolbar">
+      <div class="grow">
+        <select id="filter" aria-label="Filter by table or client">
+          <option value="">All tables / clients</option>
+        </select>
+      </div>
+      <button class="ghost" id="exportBtn" type="button">Export CSV</button>
+      <button class="ghost danger" id="clearBtn" type="button">Clear all</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th><th>Table / Client</th><th>Item</th><th>Type</th>
+            <th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div id="emptyMsg" class="empty">No orders yet — add the first one above.</div>
+    <div class="totals">
+      <span>Items: <span id="totItems" class="amt">0</span></span>
+      <span>Total: <span id="totAmount" class="amt">R0.00</span></span>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var KEY = "vaalOewerOrders.v1";
+  var orders = load();
+  var currentType = "Food";
+
+  var $ = function(id){ return document.getElementById(id); };
+  var form = $("orderForm"), rows = $("rows"), filter = $("filter");
+
+  // ---- storage ----
+  function load(){
+    try { return JSON.parse(localStorage.getItem(KEY)) || []; }
+    catch(e){ return []; }
+  }
+  function save(){
+    try { localStorage.setItem(KEY, JSON.stringify(orders)); }
+    catch(e){ /* private mode / storage blocked — app still works this session */ }
+  }
+
+  // ---- type toggle ----
+  Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function(btn){
+    btn.addEventListener("click", function(){
+      currentType = btn.getAttribute("data-type");
+      document.querySelectorAll(".seg button").forEach(function(b){
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+    });
+  });
+
+  // ---- add ----
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var item = $("item").value.trim();
+    if(!item) return;
+    var qty = Math.max(1, parseInt($("qty").value, 10) || 1);
+    var priceRaw = $("price").value.trim();
+    var price = priceRaw === "" ? null : Math.max(0, parseFloat(priceRaw) || 0);
+    orders.push({
+      id: Date.now() + "-" + Math.random().toString(36).slice(2,7),
+      ts: Date.now(),
+      table: $("tableName").value.trim(),
+      item: item,
+      type: currentType,
+      qty: qty,
+      price: price
+    });
+    save();
+    form.reset();
+    // keep the chosen type after reset
+    setType(currentType);
+    $("item").focus();
+    render();
+  });
+
+  function setType(t){
+    currentType = t;
+    document.querySelectorAll(".seg button").forEach(function(b){
+      b.setAttribute("aria-pressed", b.getAttribute("data-type") === t ? "true" : "false");
+    });
+  }
+
+  // ---- delete / clear ----
+  rows.addEventListener("click", function(e){
+    var btn = e.target.closest("[data-del]");
+    if(!btn) return;
+    var id = btn.getAttribute("data-del");
+    orders = orders.filter(function(o){ return o.id !== id; });
+    save(); render();
+  });
+  $("clearBtn").addEventListener("click", function(){
+    if(!orders.length) return;
+    if(confirm("Delete ALL recorded orders? This cannot be undone.")){
+      orders = []; save(); render();
+    }
+  });
+
+  // ---- filter ----
+  filter.addEventListener("change", render);
+
+  // ---- export ----
+  $("exportBtn").addEventListener("click", function(){
+    if(!orders.length){ alert("Nothing to export yet."); return; }
+    var head = ["Time","Table/Client","Item","Type","Qty","Price each","Line total"];
+    var lines = [head.join(",")];
+    visible().forEach(function(o){
+      lines.push([
+        csv(new Date(o.ts).toLocaleString()),
+        csv(o.table), csv(o.item), csv(o.type),
+        o.qty, o.price==null?"":o.price.toFixed(2),
+        o.price==null?"":(o.price*o.qty).toFixed(2)
+      ].join(","));
+    });
+    var blob = new Blob([lines.join("\n")], {type:"text/csv"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "orders-" + new Date().toISOString().slice(0,10) + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+  function csv(v){ v = (v==null?"":String(v)); return '"' + v.replace(/"/g,'""') + '"'; }
+
+  // ---- helpers ----
+  function money(n){ return "R" + (n||0).toFixed(2); }
+  function visible(){
+    var f = filter.value;
+    var list = f ? orders.filter(function(o){ return (o.table||"—") === f; }) : orders.slice();
+    return list.sort(function(a,b){ return b.ts - a.ts; });
+  }
+
+  // ---- render ----
+  function render(){
+    // rebuild filter options
+    var tables = {};
+    orders.forEach(function(o){ tables[o.table||"—"] = true; });
+    var keep = filter.value;
+    filter.innerHTML = '<option value="">All tables / clients</option>';
+    Object.keys(tables).sort().forEach(function(t){
+      var opt = document.createElement("option");
+      opt.value = t; opt.textContent = t;
+      if(t === keep) opt.selected = true;
+      filter.appendChild(opt);
+    });
+
+    var list = visible();
+    rows.innerHTML = "";
+    var totItems = 0, totAmount = 0;
+    list.forEach(function(o){
+      totItems += o.qty;
+      var line = o.price==null ? null : o.price * o.qty;
+      if(line!=null) totAmount += line;
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + new Date(o.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + "</td>" +
+        "<td>" + esc(o.table || "—") + "</td>" +
+        "<td class='item'>" + esc(o.item) + "</td>" +
+        "<td><span class='pill " + (o.type==='Drink'?'drink':'food') + "'>" + o.type + "</span></td>" +
+        "<td class='num'>" + o.qty + "</td>" +
+        "<td class='num'>" + (o.price==null ? "—" : money(o.price)) + "</td>" +
+        "<td class='num'>" + (line==null ? "—" : money(line)) + "</td>" +
+        "<td class='num'><button class='del' data-del='" + o.id + "' title='Delete'>✕</button></td>";
+      rows.appendChild(tr);
+    });
+
+    $("emptyMsg").style.display = list.length ? "none" : "block";
+    $("totItems").textContent = totItems;
+    $("totAmount").textContent = money(totAmount);
+  }
+  function esc(s){ return String(s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  }); }
+
+  render();
+})();
+</script>
+</body>
+</html>

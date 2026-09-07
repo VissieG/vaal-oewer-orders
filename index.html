@@ -494,6 +494,50 @@
     toast(m.name+" ×"+qty+" added");
   });
 
+    // ---- add an item that is NOT on the menu (specials / new items) ----
+  var customBtn = document.createElement("button");
+  customBtn.className = "btn ghost";
+  customBtn.style.marginTop = "10px";
+  customBtn.innerHTML = "✏️ Item not on the menu";
+  customBtn.addEventListener("click", function(){
+    if(!current || current.closed) return;
+    var nm = prompt("Item name (e.g. Special: Lamb Curry):", "");
+    if(nm === null) return;
+    nm = nm.trim(); if(!nm){ toast("No name entered"); return; }
+    var qs = prompt("How many " + nm + "?", "1");
+    if(qs === null) return;
+    var qty = Math.max(1, parseInt(qs, 10) || 1);
+
+    // If it is already on the menu, just use it (never overwrite an existing price)
+    var existing = state.menu.filter(function(x){ return String(x.name).toLowerCase() === nm.toLowerCase(); })[0];
+    if(existing){
+      var l0 = draft.filter(function(l){ return l.id === existing.id; })[0];
+      if(l0) l0.qty += qty;
+      else draft.push({id:existing.id, name:existing.name, category:existing.category, price:existing.price, qty:qty});
+      draftDirty = true; renderTable();
+      toast(existing.name + " ×" + qty + " added");
+      return;
+    }
+
+    var pr = prompt("Price in Rand for ONE " + nm + ":", "");
+    if(pr === null) return;
+    var price = Math.max(0, Number(String(pr).replace(",", ".").replace(/[^0-9.]/g, "")) || 0);
+    var cat = ($("addCat").value === "Drink") ? "Drink" : "Food";
+    setBusy(true);
+    api({action:"menuUpsert", name:nm, category:cat, price:price}).then(function(d){
+      applyState(d);
+      var m = state.menu.filter(function(x){ return String(x.name) === nm; })[0];
+      if(!m){ banner("Couldn't add that item — try again."); return; }
+      var line = draft.filter(function(l){ return l.id === m.id; })[0];
+      if(line) line.qty += qty;
+      else draft.push({id:m.id, name:m.name, category:m.category, price:m.price, qty:qty});
+      draftDirty = true; renderTable();
+      toast(m.name + " ×" + qty + " added");
+    }).catch(function(){ banner("Couldn't add that item — check internet."); })
+      .then(function(){ setBusy(false); });
+  });
+  $("addBtn").parentNode.appendChild(customBtn);
+  
   $("tblLines").addEventListener("click", function(e){
     if(!current || current.closed) return;
     var inc=e.target.closest("[data-inc]"), dec=e.target.closest("[data-dec]"), rm=e.target.closest("[data-rm]");

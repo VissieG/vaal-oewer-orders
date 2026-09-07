@@ -141,14 +141,24 @@
   .pindots i.on{background:var(--brass);border-color:var(--brass)}
 
   /* print receipt */
-  .printarea{position:fixed;left:-10000px;top:0;width:80mm;background:#fff;color:#000;padding:10px;font:12px/1.4 'Courier New',monospace}
-  .printarea h3{margin:0 0 2px;font-size:15px;text-align:center}
-  .printarea .pc{text-align:center;margin-bottom:8px}
-  .printarea table{width:100%;border-collapse:collapse}
-  .printarea td{padding:2px 0;vertical-align:top}
-  .printarea .r{text-align:right}
-  .printarea .tot td{border-top:1px dashed #000;font-weight:bold;padding-top:6px}
-  @media print{ body{background:#fff} .app,#conn,.toast{display:none!important} .printarea{left:0} }
+  /* on-screen bill popup (no printing) */
+  .modal{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+    padding:16px;background:rgba(20,14,6,.55);backdrop-filter:blur(2px)}
+  .modal[hidden]{display:none}
+  .receipt{background:#fffdf6;color:#241a0e;width:100%;max-width:420px;max-height:88vh;overflow:auto;
+    border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.4);border:1px solid var(--line);
+    padding:22px 20px;font-family:'Courier New',ui-monospace,monospace}
+  .receipt h3{margin:0;text-align:center;font-size:1.35rem;letter-spacing:.5px}
+  .receipt .pc{text-align:center;color:#6d5c42;font-size:.9rem;margin:4px 0 2px}
+  .receipt .rtable{width:100%;border-collapse:collapse;margin-top:14px;font-size:1.02rem}
+  .receipt .rtable td{padding:7px 0;vertical-align:top;border-bottom:1px dotted #d8c8a6}
+  .receipt .rtable .r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .receipt .rtable .qc{width:44px;text-align:center;color:#6d5c42}
+  .receipt .grand{display:flex;justify-content:space-between;align-items:center;margin-top:16px;
+    padding-top:12px;border-top:2px solid #241a0e;font-weight:800;font-size:1.5rem}
+  .receipt .grand .amt{color:var(--drink)}
+  .receipt .thanks{text-align:center;color:#6d5c42;margin-top:14px;font-size:.95rem}
+  .receipt .rclose{margin-top:18px}
 </style>
 </head>
 <body>
@@ -263,7 +273,7 @@
     </section>
   </main>
 </div>
-<div class="printarea" id="printArea"></div>
+<div class="modal" id="billModal" hidden><div class="receipt" id="billBody"></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -451,11 +461,11 @@
 
     var f=$("tblFooter"); f.innerHTML="";
     if(ro){
-      f.appendChild(mkBtn("🖨️ Print bill","btn",function(){ printBill(t.name, t.items); }));
+      f.appendChild(mkBtn("🧾 View bill","btn",function(){ showBill(t.name, t.items); }));
       f.appendChild(mkBtn("✉️ Email bill","btn ghost",function(){ emailBill(t); }));
     } else {
       f.appendChild(mkBtn(draftDirty?"💾 Save order":"💾 Order saved","btn"+(draftDirty?" gold":" ghost"), function(){ if(draftDirty) saveDraft(); }));
-      f.appendChild(mkBtn("✅ Close &amp; print bill","btn ok", closeAndPrint));
+      f.appendChild(mkBtn("🧾 Close &amp; show bill","btn ok", closeAndPrint));
       f.appendChild(mkBtn("✉️ Email bill","btn ghost",function(){ emailBill(t); }));
     }
   }
@@ -516,25 +526,30 @@
     setBusy(true);
     api({action:"saveTab", tabId:current.id, items:items})
       .then(function(){ return api({action:"closeTab", tabId:current.id}); })
-      .then(function(d){ applyState(d); if(billItems.length) printBill(billName, billItems);
-        draftDirty=false; go("bar"); toast("Table closed ✓"); })
+      .then(function(d){ applyState(d); draftDirty=false; go("bar"); toast("Table closed ✓");
+        if(billItems.length) showBill(billName, billItems); })
       .catch(function(){ banner("Couldn't close — check internet."); })
       .then(function(){ setBusy(false); });
   }
 
-  // ---- print + email ----
-  function printBill(name, items){
+  // ---- bill popup (on-screen, no printing) + email ----
+  function showBill(name, items){
     var rows="", tot=0;
     items.forEach(function(l){ var lt=(l.price!=null)?l.price*l.qty:0; tot+=lt;
-      rows+="<tr><td>"+esc(l.name)+"</td><td class='r'>×"+l.qty+"</td><td class='r'>"+(l.price!=null?money(lt):"—")+"</td></tr>"; });
+      rows+="<tr><td>"+esc(l.name)+"</td><td class='qc'>×"+l.qty+"</td><td class='r'>"+(l.price!=null?money(lt):"—")+"</td></tr>"; });
     var now=new Date();
-    $("printArea").innerHTML=
+    $("billBody").innerHTML=
       "<h3>Candy's Pub &amp; Restaurant</h3>"+
-      "<div class='pc'>Vaal Oewer<br>"+now.toLocaleDateString()+" "+now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+"<br>Table: "+esc(name)+"</div>"+
-      "<table>"+rows+"<tr class='tot'><td>TOTAL</td><td></td><td class='r'>"+money(tot)+"</td></tr></table>"+
-      "<div class='pc' style='margin-top:10px'>Baie dankie! · Thank you</div>";
-    window.print();
+      "<div class='pc'>Vaal Oewer</div>"+
+      "<div class='pc'>"+now.toLocaleDateString()+" · "+now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+" · Table "+esc(name)+"</div>"+
+      "<table class='rtable'>"+rows+"</table>"+
+      "<div class='grand'><span>TOTAL</span><span class='amt'>"+money(tot)+"</span></div>"+
+      "<div class='thanks'>Baie dankie! · Thank you</div>"+
+      "<button class='btn rclose' id='billClose'>Done</button>";
+    $("billModal").hidden=false;
+    $("billClose").addEventListener("click", function(){ $("billModal").hidden=true; });
   }
+  $("billModal").addEventListener("click", function(e){ if(e.target===$("billModal")) $("billModal").hidden=true; });
   function emailBill(t){
     var addr=prompt("Email this bill to:\n(Emailing bills is coming soon — this won't send yet.)","");
     if(addr) toast("Emailing bills is coming soon");

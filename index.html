@@ -405,7 +405,7 @@
     pickedNum=null; $("newName").value="";
     var g=$("numGrid"); g.innerHTML="";
     var used={}; state.open.forEach(function(t){ var n=parseInt(t.name,10); if(!isNaN(n)) used[n]=1; });
-    for(var i=1;i<=40;i++){ (function(n){
+    for(var i=1;i<=20;i++){ (function(n){
       var b=document.createElement("button"); b.textContent=n; b.setAttribute("aria-pressed","false");
       if(used[n]) b.style.opacity=".4";
       b.addEventListener("click", function(){ pickedNum=n;
